@@ -309,7 +309,7 @@ def run(config: dict, state: dict, notifier: Notifier) -> dict:
         patterns = compile_patterns(target["patterns"]) if "patterns" in target else default_patterns
 
         try:
-            resp = fetch(url)
+            resp = fetch(url, int(target.get("timeout", 25)))
             resp.encoding = resp.encoding or "utf-8"
             text = resp.text
         except requests.RequestException as exc:
