@@ -38,7 +38,7 @@ Gemeldet wird nur bei **Änderungen**, nicht bei jedem Lauf.
 5. Noch einmal **Run workflow** ohne Haken: Das ist der erste echte Lauf. Im Protokoll siehst du
    für jede Quelle den Status (`lieferbar`, `nicht_lieferbar`, `blockiert`, …).
 
-Ab dann läuft alles alle 10 Minuten von selbst.
+Ab dann läuft alles alle 10 Minuten von selbst – du musst nichts mehr tun.
 
 > Zeitpläne laufen nur auf dem **Standard-Branch** des Repos (Settings → General → Default branch).
 
