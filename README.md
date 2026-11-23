@@ -59,3 +59,21 @@ pip install -r requirements.txt pytest
 python -m pytest -q
 NTFY_TOPIC=dein-thema python monitor.py --dry-run
 ```
+
+## Windows-Notebook (Shops, die GitHub-Server blockieren)
+
+`config-local.yaml` enthält die Shops, die in `config.yaml` abgeschaltet sind, weil sie
+GitHub blockieren. Auf dem Notebook laufen sie über die Windows-Aufgabenplanung:
+
+```powershell
+pip install -r requirements.txt
+python monitor.py --config config-local.yaml --dry-run
+# einmalig, PowerShell als Administrator:
+powershell -ExecutionPolicy Bypass -File .\install-windows-task.ps1 -Topic <dein-thema>
+```
+
+Die Aufgabe läuft alle 10 Minuten als SYSTEM (ohne Anmeldung, auch nach Neustart);
+Log in `state\monitor-local.log`, Zustand in `state\state-local.json`.
+
+Für Shops mit irreführenden schema.org-Daten gibt es pro Eintrag `sold_out_patterns`,
+`in_stock_patterns` (Regex auf dem HTML, haben Vorrang) und `ignore_schema: true`.

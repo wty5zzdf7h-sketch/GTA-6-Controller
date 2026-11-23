@@ -8,7 +8,8 @@ import yaml  # noqa: E402
 
 import monitor as m  # noqa: E402
 
-CONFIG = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())
+CONFIG = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text(encoding="utf-8"))
+LOCAL = yaml.safe_load((Path(__file__).resolve().parents[1] / "config-local.yaml").read_text(encoding="utf-8"))
 PATTERNS = m.compile_patterns(CONFIG["match_patterns"])
 MUST = m.compile_patterns([r"grand theft auto|gta ?vi|gta 6"])
 
@@ -35,6 +36,26 @@ def test_visible_sold_out_beats_schema_instock():
     # gameshop.at: schema.org sagt InStock, Seite zeigt „leider ausverkauft“
     r = m.analyse_product(page("InStock", "<img alt='leider ausverkauft'>"), 200, MUST)
     assert r.status == m.UNAVAILABLE
+
+
+def _gameshop(button_src):
+    t = next(t for t in LOCAL["targets"] if t["id"] == "gameshop-at-white")
+    raw = ('<html><title>DualSense Wireless-Controller V3 Grand Theft Auto VI White Limited Edition</title>'
+           '<link itemprop="availability" href="https://schema.org/InStock"/>'
+           '<a href="x.html">Dying Light online kaufen, vorbestellen</a>'
+           f'<td><img class="btn_warenkorb_detail" src="webpics/{button_src}" width=115></td></html>')
+    return m.analyse_product(raw, 200, MUST,
+                             sold_out=m.compile_patterns(t["sold_out_patterns"]),
+                             in_stock=m.compile_patterns(t["in_stock_patterns"]))
+
+
+def test_gameshop_button_image_decides():
+    assert _gameshop("ausverkauft_v3.png").status == m.UNAVAILABLE
+    assert _gameshop("warenkorb_v3.png").status == m.AVAILABLE
+    # Button fehlt -> unbekannt statt falscher Alarm
+    assert m.analyse_product('<title>GTA VI</title><link itemprop="availability" href="https://schema.org/InStock"/>',
+                             200, MUST, sold_out=m.compile_patterns(["ausverkauft"]),
+                             in_stock=m.compile_patterns(["btn_warenkorb"])).status == m.UNKNOWN
 
 
 def test_jsonld_out_of_stock():

@@ -8,6 +8,7 @@ Aufruf:
     python monitor.py               # normaler Lauf
     python monitor.py --test        # nur eine Testnachricht senden
     python monitor.py --dry-run     # prüfen, aber nichts senden/speichern
+    python monitor.py --config config-local.yaml   # andere Konfiguration (z. B. Notebook)
 """
 from __future__ import annotations
 
@@ -168,7 +169,12 @@ def jsonld_availability(raw_html: str) -> tuple[str | None, str | None]:
 # --------------------------------------------------------------------------- #
 # Prüfungen
 # --------------------------------------------------------------------------- #
-def analyse_product(raw_html: str, status_code: int, must_contain: list[re.Pattern]) -> Result:
+def analyse_product(raw_html: str, status_code: int, must_contain: list[re.Pattern],
+                    sold_out: list[re.Pattern] | None = None,
+                    in_stock: list[re.Pattern] | None = None,
+                    ignore_schema: bool = False) -> Result:
+    """sold_out/in_stock: shop-eigene Muster (auf dem rohen HTML), die Vorrang haben.
+    Sind welche angegeben und keines passt, ist das Ergebnis „unbekannt“ (Seite umgebaut?)."""
     body = normalize(raw_html)
     blocked = looks_blocked(status_code, body)
     if blocked:
@@ -181,6 +187,14 @@ def analyse_product(raw_html: str, status_code: int, must_contain: list[re.Patte
         return Result(UNKNOWN, "Produktname nicht auf der Seite (Weiterleitung?)")
 
     status, price = jsonld_availability(raw_html)
+    if sold_out or in_stock:
+        if sold_out and any(p.search(raw_html) for p in sold_out):
+            return Result(UNAVAILABLE, "Shop-Muster", price)
+        if in_stock and any(p.search(raw_html) for p in in_stock):
+            return Result(AVAILABLE, "Shop-Muster", price)
+        return Result(UNKNOWN, "Shop-Muster passt nicht (Seite umgebaut?)")
+    if ignore_schema:
+        status = None
     has_out = any(w in body for w in OUT_OF_STOCK_WORDS)
     has_in = any(w in body for w in IN_STOCK_WORDS)
     if status == AVAILABLE and has_out and not has_in:
@@ -279,16 +293,24 @@ class Notifier:
 # --------------------------------------------------------------------------- #
 # Hauptablauf
 # --------------------------------------------------------------------------- #
-def load_state() -> dict:
+def load_state(path: Path = STATE_PATH) -> dict:
     try:
-        return json.loads(STATE_PATH.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
-def save_state(state: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False, sort_keys=True))
+def save_state(state: dict, path: Path = STATE_PATH) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+
+
+def state_path_for(config: dict) -> Path:
+    """STATE_FILE (Umgebung) > settings.state_file (relativ zum Repo) > state/state.json."""
+    if os.environ.get("STATE_FILE"):
+        return Path(os.environ["STATE_FILE"])
+    custom = config.get("settings", {}).get("state_file")
+    return (ROOT / custom) if custom else STATE_PATH
 
 
 def label(target: dict) -> str:
@@ -324,7 +346,12 @@ def run(config: dict, state: dict, notifier: Notifier) -> dict:
         if resp is not None:
             if kind == "product":
                 must = compile_patterns(target.get("must_contain", [r"grand theft auto|gta ?vi|gta 6"]))
-                result = analyse_product(text, resp.status_code, must)
+                result = analyse_product(
+                    text, resp.status_code, must,
+                    sold_out=compile_patterns(target.get("sold_out_patterns", [])),
+                    in_stock=compile_patterns(target.get("in_stock_patterns", [])),
+                    ignore_schema=bool(target.get("ignore_schema", False)),
+                )
             elif kind == "search":
                 result = analyse_search(text, resp.status_code, patterns)
             elif kind == "feed":
@@ -432,9 +459,32 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", action="store_true", help="nur Testnachricht senden")
     parser.add_argument("--dry-run", action="store_true", help="nichts senden/speichern")
+    parser.add_argument("--config", type=Path, default=CONFIG_PATH,
+                        help="Konfigurationsdatei (Standard: config.yaml)")
     args = parser.parse_args()
 
-    config = yaml.safe_load(CONFIG_PATH.read_text())
+    # Windows-Konsole/Aufgabenplanung nutzt sonst cp1252 und scheitert an Emojis
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+    config_path = args.config if args.config.is_absolute() else Path.cwd() / args.config
+    if not config_path.exists():
+        config_path = ROOT / args.config
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    # Optional: Ausgabe in eine Log-Datei (für die Windows-Aufgabenplanung)
+    log_file = config.get("settings", {}).get("log_file")
+    if log_file:
+        log_path = ROOT / log_file
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        if log_path.exists() and log_path.stat().st_size > 2_000_000:
+            log_path.replace(log_path.with_suffix(".old.log"))
+        log = open(log_path, "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = log
+        print(f"\n=== {dt.datetime.now().isoformat(timespec='seconds')} ===")
     server = os.environ.get("NTFY_SERVER") or config.get("settings", {}).get("ntfy_server", "https://ntfy.sh")
     notifier = Notifier(server, os.environ.get("NTFY_TOPIC"), dry_run=args.dry_run)
 
@@ -443,11 +493,12 @@ def main() -> int:
                       "Wenn du das liest, funktionieren die Benachrichtigungen.", 4, ["tada"])
         return 0
 
-    state = load_state()
+    state_path = state_path_for(config)
+    state = load_state(state_path)
     state = run(config, state, notifier)
     state["last_run"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     if not args.dry_run:
-        save_state(state)
+        save_state(state, state_path)
     return 0
 
 
