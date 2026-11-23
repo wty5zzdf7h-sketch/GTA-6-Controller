@@ -57,6 +57,7 @@ targets:
     url: https://www.galaxus.ch/de/search?q=dualsense%20grand%20theft%20auto
 
   - id: brack-search
+    enabled: false   # antwortet GitHub nicht (Timeout) – kommt aufs Notebook
     timeout: 45
     name: Brack Suche
     type: search
@@ -111,6 +112,7 @@ targets:
     url: https://direct.playstation.com/de-de/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile
 
   - id: gameshop-at-white
+    enabled: false   # meldet fälschlich InStock – wird auf dem Notebook neu eingerichtet
     name: gameshop.at
     variant: Weiss
     type: product
@@ -154,6 +156,7 @@ targets:
     url: https://www.reddit.com/r/Switzerland/search.rss?q=gta+controller&restrict_sr=1&sort=new
 
   - id: mydealz
+    enabled: false   # Feed-Adresse falsch (404) – wird korrigiert
     name: mydealz
     type: feed
     url: https://www.mydealz.de/rss/alle
