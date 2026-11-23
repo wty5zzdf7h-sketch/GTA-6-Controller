@@ -26,9 +26,15 @@ def page(availability=None, body=""):
 
 
 def test_jsonld_in_stock():
-    r = m.analyse_product(page("InStock", "Ausverkauft-Hinweis anderer Artikel"), 200, MUST)
+    r = m.analyse_product(page("InStock", "Zubehör ausverkauft <button>In den Warenkorb</button>"), 200, MUST)
     assert r.status == m.AVAILABLE
     assert r.price == "89.90 CHF"
+
+
+def test_visible_sold_out_beats_schema_instock():
+    # gameshop.at: schema.org sagt InStock, Seite zeigt „leider ausverkauft“
+    r = m.analyse_product(page("InStock", "<img alt='leider ausverkauft'>"), 200, MUST)
+    assert r.status == m.UNAVAILABLE
 
 
 def test_jsonld_out_of_stock():

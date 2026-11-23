@@ -181,12 +181,17 @@ def analyse_product(raw_html: str, status_code: int, must_contain: list[re.Patte
         return Result(UNKNOWN, "Produktname nicht auf der Seite (Weiterleitung?)")
 
     status, price = jsonld_availability(raw_html)
+    has_out = any(w in body for w in OUT_OF_STOCK_WORDS)
+    has_in = any(w in body for w in IN_STOCK_WORDS)
+    if status == AVAILABLE and has_out and not has_in:
+        # Versteckte Daten sagen „InStock“, sichtbarer Text sagt „ausverkauft“ -> Text gewinnt
+        return Result(UNAVAILABLE, "Text widerspricht schema.org", price)
     if status:
         return Result(status, "schema.org", price)
 
-    if any(w in body for w in OUT_OF_STOCK_WORDS):
+    if has_out:
         return Result(UNAVAILABLE, "Stichwort")
-    if any(w in body for w in IN_STOCK_WORDS):
+    if has_in:
         return Result(AVAILABLE, "Stichwort")
     return Result(UNKNOWN, "Verfügbarkeit nicht erkennbar")
 
